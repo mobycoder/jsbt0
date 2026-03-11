@@ -51,9 +51,13 @@ Use WebSearch for each component. Record both the version number AND where it li
 
 ### gRPC Java and Protobuf
 - These are managed by the spring-grpc-dependencies BOM. After you determine the new
-  spring-grpc version, read its BOM POM to find the managed grpc.version and protobuf.version:
-  Run: `curl -s "https://repo.spring.io/milestone/org/springframework/grpc/spring-grpc-dependencies/VERSION/spring-grpc-dependencies-VERSION.pom"`
-  (replace VERSION with the new spring-grpc version)
+  spring-grpc version, read its BOM POM to find the managed grpc.version and protobuf.version.
+  Use the correct repository depending on where the version lives:
+  - If the new spring-grpc version is GA on Maven Central:
+    `curl -s "https://repo.maven.apache.org/maven2/org/springframework/grpc/spring-grpc-dependencies/VERSION/spring-grpc-dependencies-VERSION.pom"`
+  - If the new spring-grpc version is RC/Milestone only:
+    `curl -s "https://repo.spring.io/milestone/org/springframework/grpc/spring-grpc-dependencies/VERSION/spring-grpc-dependencies-VERSION.pom"`
+  (replace VERSION with the new spring-grpc version in both cases)
 - Update `<grpc.version>` and `<protobuf.version>` in pom.xml to match the BOM values.
   These must stay in sync — do not leave them at old values.
 
@@ -73,14 +77,24 @@ Compare current vs latest for each component. Build a plan:
 
 ---
 
-## Step 4 — Update pom.xml
+## Step 4 — Sync with remote before making any changes
+
+Before editing anything, ensure the local repo is up to date with origin in case
+GitHub Actions already ran an update this month:
+```bash
+git pull --rebase
+```
+If this fails (e.g., uncommitted changes), abort with an appropriate CHANGELOG entry
+and do not proceed.
+
+## Step 5 — Update pom.xml
 
 Edit `pom.xml` surgically — only change the specific version strings that need updating.
 Do not reformat, reorder, or touch anything else.
 
 ---
 
-## Step 5 — Run JVM build
+## Step 6 — Run JVM build
 
 First, determine JAVA_HOME:
 ```bash
@@ -97,7 +111,7 @@ Run:
 JAVA_HOME="$JAVA_HOME" mvn -B verify 2>&1
 ```
 
-### If JVM build PASSES → go to Step 6.
+### If JVM build PASSES → go to Step 7.
 
 ### If JVM build FAILS:
 1. Read the error carefully. Identify which dependency caused the failure.
@@ -106,53 +120,69 @@ JAVA_HOME="$JAVA_HOME" mvn -B verify 2>&1
 4. Update pom.xml and re-run the JVM build.
 5. If the fallback also fails → revert pom.xml to original versions (Step 1 values).
 6. Record the failure in CHANGELOG.md (what was tried, what failed, why).
-7. Skip Steps 6, 7 (no native build, no git push of code changes).
-8. Proceed to Step 8 (log-only commit).
+7. Skip Steps 7, 8 (no native build, no git push of code changes).
+8. Proceed to Step 9 (log-only commit).
 
 ---
 
-## Step 6 — Run native build
+## Step 7 — Run native build
 
 ```bash
 JAVA_HOME="$JAVA_HOME" mvn -B -Pnative native:compile -DskipTests 2>&1
 ```
 
-### If native build PASSES → go to Step 7.
+### If native build PASSES → go to Step 8.
 
 ### If native build FAILS:
-- Apply the same fallback logic as Step 5.
-- If fallback fails → revert pom.xml, record failure, skip git push of code changes.
-- Proceed to Step 8 (log-only commit).
+1. Read the error carefully.
+2. Revert ALL pom.xml version changes back to the original Step 1 values — do not
+   attempt per-component fallbacks at this stage, since the JVM build already passed
+   and the native failure may be caused by an interaction between multiple updated
+   components. A clean revert is safer than partial rollback.
+3. Record the failure in CHANGELOG.md: what was tried, what the native error was,
+   and that all versions were reverted.
+4. Skip git push of pom.xml changes.
+5. Proceed to Step 9 (log-only commit).
 
 ---
 
-## Step 7 — Update CHANGELOG.md
+## Step 8 — Update CHANGELOG.md
 
 Prepend a new entry directly after the `# CHANGELOG` heading line.
 Use exactly this format (adjust content to reflect what actually happened):
+
+Only include sections that are relevant. Do not copy placeholder text or instructions
+into the actual CHANGELOG entry.
 
 ```
 ## YYYY-MM-DD — Monthly Update
 
 ### Updated
 - Spring Boot: X.X.X → Y.Y.Y
-- Spring gRPC: X.X.X → Y.Y.Y  (Maven Central GA / Spring Milestone RC1)
+- Spring gRPC: X.X.X → Y.Y.Y  (Maven Central GA)
 - gRPC Java: X.X.X → Y.Y.Y
 - Protobuf: X.X.X → Y.Y.Y
-- Spring Milestone repository: removed (spring-grpc graduated to Maven Central)   ← only if applicable
+- Spring Milestone repository: removed (spring-grpc graduated to Maven Central)
 
 ### Unchanged
 - Java LTS: 25 (next LTS expected Sept 2027)
-- Spring Boot: already at latest (X.X.X)   ← only for components that did not change
 
 ### Issues & Resolutions
-- [describe any build failures, fallback versions tried, and resolutions]
-- None   ← if everything updated cleanly
+- None
 
 ### Build Results
-- JVM build:    PASS ✓ / FAIL ✗
-- Native build: PASS ✓ / FAIL ✗
+- JVM build:    PASS ✓
+- Native build: PASS ✓
 ```
+
+Rules for each section:
+- **Updated**: only list components whose version actually changed. If spring-grpc is
+  still on Milestone, note that. If it graduated to Central, include the "removed" line.
+- **Unchanged**: only list components that were checked but not changed. Omit this
+  section entirely if everything was updated.
+- **Issues & Resolutions**: write "None" if everything updated cleanly. Otherwise
+  describe each failure, what fallback was tried, and the outcome.
+- **Build Results**: always include both lines with actual PASS/FAIL result.
 
 If nothing changed at all (all versions already current):
 ```
@@ -167,29 +197,40 @@ All components already at latest compatible versions. No changes made.
 
 ---
 
-## Step 8 — Commit and push
+## Step 9 — Commit and push
+
+Write the commit message to a temp file first to avoid shell-quoting issues with
+CHANGELOG content (backticks, dollar signs, or quotes in the log would break an
+inline `-m "..."` argument).
 
 ### If both builds passed (with or without fallbacks, as long as they pass):
 ```bash
+TODAY=$(date +%Y-%m-%d)
+printf 'chore: monthly dependency update %s\n\nSee CHANGELOG.md for full details.' "$TODAY" > /tmp/jsbt0-commit-msg.txt
 git add pom.xml CHANGELOG.md
-git commit -m "chore: monthly dependency update $(date +%Y-%m-%d)
-
-$(grep -A 20 "^## $(date +%Y-%m-%d)" CHANGELOG.md | head -20)"
+git commit -F /tmp/jsbt0-commit-msg.txt
 git push
+rm -f /tmp/jsbt0-commit-msg.txt
 ```
 
 ### If builds failed and pom.xml was reverted (log-only):
 ```bash
+TODAY=$(date +%Y-%m-%d)
+printf 'chore: monthly update log %s — no version changes\n\nBuild failures encountered. See CHANGELOG.md for details.' "$TODAY" > /tmp/jsbt0-commit-msg.txt
 git add CHANGELOG.md
-git commit -m "chore: monthly update log $(date +%Y-%m-%d) — no version changes (build failures, see CHANGELOG.md)"
+git commit -F /tmp/jsbt0-commit-msg.txt
 git push
+rm -f /tmp/jsbt0-commit-msg.txt
 ```
 
 ### If nothing changed (no updates available):
 ```bash
+TODAY=$(date +%Y-%m-%d)
+printf 'chore: monthly update log %s — no updates available\n\nAll components already at latest compatible versions.' "$TODAY" > /tmp/jsbt0-commit-msg.txt
 git add CHANGELOG.md
-git commit -m "chore: monthly update log $(date +%Y-%m-%d) — no updates available"
+git commit -F /tmp/jsbt0-commit-msg.txt
 git push
+rm -f /tmp/jsbt0-commit-msg.txt
 ```
 
 ---

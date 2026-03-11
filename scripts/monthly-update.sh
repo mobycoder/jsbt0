@@ -23,7 +23,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROMPT_FILE="$SCRIPT_DIR/update-prompt.md"
 LOG_DIR="$PROJECT_DIR/logs"
-LOG_FILE="$LOG_DIR/update-$(date +%Y-%m).log"
+# Log file name is resolved at runtime (not at script-load time) so a run
+# that starts just before midnight on the last day of a month gets the
+# correct month name in its log file.
+log_file() { echo "$LOG_DIR/update-$(date +%Y-%m).log"; }
 
 # ---- GraalVM 25 location (macOS default) ------------------------------------
 GRAALVM_HOME="/Library/Java/JavaVirtualMachines/graalvm-25.jdk/Contents/Home"
@@ -72,6 +75,12 @@ mkdir -p "$LOG_DIR"
 
 # ---- Guard: abort if a run already occurred in the past 7 days --------------
 cd "$PROJECT_DIR"
+
+# Pull latest from remote before doing anything — ensures we don't conflict
+# with a GitHub Actions run that may have already pushed this month.
+git pull --rebase 2>&1 | tee -a "$(log_file)" || {
+  echo "[$(date)] WARNING: git pull --rebase failed. Proceeding anyway." | tee -a "$(log_file)"
+}
 CHANGELOG="$PROJECT_DIR/CHANGELOG.md"
 
 if [ -f "$CHANGELOG" ]; then
@@ -90,7 +99,7 @@ if [ -f "$CHANGELOG" ]; then
 
     if [ "$LAST_EPOCH" -gt "$SEVEN_AGO" ]; then
       MSG="Aborting: last run was $LAST_DATE (within 7 days). No update needed."
-      echo "[$(date)] $MSG" | tee -a "$LOG_FILE"
+      echo "[$(date)] $MSG" | tee -a "$(log_file)"
       exit 0
     fi
   fi
@@ -105,20 +114,24 @@ fi
   echo "Java version: $(java -version 2>&1 | head -1)"
   echo "Claude version: $(claude --version 2>&1 | head -1)"
   echo "========================================================================"
-} | tee -a "$LOG_FILE"
+} | tee -a "$(log_file)"
 
+# Disable errexit around the claude call so we can capture its exit code
+# even when it returns non-zero (pipefail + set -e would otherwise kill the
+# script before EXIT_CODE=${PIPESTATUS[0]} is reached).
+set +e
 claude -p "$(cat "$PROMPT_FILE")" \
   --dangerously-skip-permissions \
   --max-turns 80 \
   --model claude-opus-4-6 \
-  2>&1 | tee -a "$LOG_FILE"
-
+  2>&1 | tee -a "$(log_file)"
 EXIT_CODE=${PIPESTATUS[0]}
+set -e
 
 {
   echo "========================================================================"
   echo "jsbt0 monthly update finished at $(date) — exit code: $EXIT_CODE"
   echo "========================================================================"
-} | tee -a "$LOG_FILE"
+} | tee -a "$(log_file)"
 
 exit $EXIT_CODE
