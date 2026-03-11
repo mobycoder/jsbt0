@@ -1,0 +1,16 @@
+# Maven build output
+target/
+
+# Local update logs (GitHub Actions logs go to the Actions UI, not here)
+logs/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Maven wrapper (if added later)
+!.mvn/wrapper/maven-wrapper.jar

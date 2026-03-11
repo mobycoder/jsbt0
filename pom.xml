@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.3</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>mobycode.template</groupId>
+    <artifactId>jsbt0</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>jsbt0</name>
+    <description>Java Spring Boot Template Project Zero — living template for new Spring Boot projects</description>
+
+    <properties>
+        <!-- Java 25 is the latest LTS as of 2025-09 -->
+        <java.version>25</java.version>
+        <!--
+            Spring gRPC 1.0.0-RC1 is the first release targeting Spring Boot 4.0.x.
+            Hosted on repo.spring.io/milestone (see <repositories> below).
+            Update to 1.0.0 once it lands on Maven Central.
+        -->
+        <spring-grpc.version>1.0.0-RC1</spring-grpc.version>
+        <!-- These match spring-grpc-dependencies 1.0.0-RC1 — keep in sync with the BOM -->
+        <grpc.version>1.76.0</grpc.version>
+        <protobuf.version>4.32.1</protobuf.version>
+    </properties>
+
+    <!-- =========================================================
+         Dependency Management
+    ========================================================= -->
+    <dependencyManagement>
+        <dependencies>
+            <!-- Spring gRPC BOM manages grpc-java, protobuf, and related artifacts -->
+            <dependency>
+                <groupId>org.springframework.grpc</groupId>
+                <artifactId>spring-grpc-dependencies</artifactId>
+                <version>${spring-grpc.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <!-- =========================================================
+         Dependencies
+    ========================================================= -->
+    <dependencies>
+        <!-- Web (REST) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Actuator — provides /actuator/health automatically -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Spring gRPC starter — autoconfigures gRPC server -->
+        <dependency>
+            <groupId>org.springframework.grpc</groupId>
+            <artifactId>spring-grpc-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- grpc-services — provides compiled grpc.health.v1 classes (HealthGrpc, etc.) -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-services</artifactId>
+        </dependency>
+
+        <!--
+            grpc-servlet-jakarta: required on the classpath so Spring Boot gRPC's
+            @ConditionalOnGrpcServletServer can resolve its target class during AOT
+            processing. Without it the native compile fails with ClassNotFoundException.
+            The actual gRPC server uses Netty; this jar is not used at runtime.
+        -->
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-servlet-jakarta</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.grpc</groupId>
+            <artifactId>spring-grpc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <!-- =========================================================
+         Build
+    ========================================================= -->
+    <build>
+        <!-- os-maven-plugin detects ${os.detected.classifier} for native protoc/grpc binaries -->
+        <extensions>
+            <extension>
+                <groupId>kr.motd.maven</groupId>
+                <artifactId>os-maven-plugin</artifactId>
+                <version>1.7.1</version>
+            </extension>
+        </extensions>
+
+        <plugins>
+            <!-- Spring Boot repackage + AOT processing (required for native) -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+
+            <!--
+                Protobuf compiler plugin.
+                Compiles .proto files in src/main/proto into Java sources.
+                Uses the standard grpc-java protoc plugin to generate stubs.
+
+                To add a custom service:
+                  1. Drop a .proto file under src/main/proto/
+                  2. Run: mvn generate-sources
+                  3. Implement the generated *ImplBase and annotate with @GrpcService
+            -->
+            <plugin>
+                <groupId>org.xolstice.maven.plugins</groupId>
+                <artifactId>protobuf-maven-plugin</artifactId>
+                <version>0.6.1</version>
+                <configuration>
+                    <protocArtifact>
+                        com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}
+                    </protocArtifact>
+                    <pluginId>grpc-java</pluginId>
+                    <pluginArtifact>
+                        io.grpc:protoc-gen-grpc-java:${grpc.version}:exe:${os.detected.classifier}
+                    </pluginArtifact>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>compile</goal>
+                            <goal>compile-custom</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!-- =========================================================
+         Profiles
+    ========================================================= -->
+    <profiles>
+        <!--
+            Native profile — compiles a GraalVM native executable.
+            Requirements:
+              - GraalVM JDK 25+ installed (required by Spring Boot 4 / Spring Framework 7)
+              - On Windows: Visual Studio Build Tools 2022 (MSVC) must be on PATH
+            Usage:
+              mvn -Pnative native:compile
+        -->
+        <profile>
+            <id>native</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>build-native</id>
+                                <goals>
+                                    <goal>compile-no-fork</goal>
+                                </goals>
+                                <phase>package</phase>
+                            </execution>
+                            <execution>
+                                <id>test-native</id>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                                <phase>test</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
+    <!-- =========================================================
+         Repositories
+         Spring milestone repo is required for spring-grpc 1.0.0-RC1.
+         Remove once spring-grpc 1.0.0 lands on Maven Central.
+    ========================================================= -->
+    <repositories>
+        <repository>
+            <id>spring-milestones</id>
+            <name>Spring Milestones</name>
+            <url>https://repo.spring.io/milestone</url>
+            <snapshots><enabled>false</enabled></snapshots>
+        </repository>
+    </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <id>spring-milestones</id>
+            <name>Spring Milestones</name>
+            <url>https://repo.spring.io/milestone</url>
+            <snapshots><enabled>false</enabled></snapshots>
+        </pluginRepository>
+    </pluginRepositories>
+
+</project>

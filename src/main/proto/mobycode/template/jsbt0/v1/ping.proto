@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+// Template custom service — replace with your own service definition.
+// To add a real service:
+//   1. Edit or replace this file with your .proto definition
+//   2. Run: mvn generate-sources
+//   3. Implement the generated *ImplBase subclass and annotate with @GrpcService
+
+package mobycode.template.jsbt0.v1;
+
+option java_multiple_files = true;
+option java_package = "mobycode.template.jsbt0.proto.v1";
+option java_outer_classname = "PingProto";
+
+// Example round-trip service to verify proto compilation and the gRPC stack.
+service PingService {
+    rpc Ping (PingRequest) returns (PingResponse);
+}
+
+message PingRequest {
+    string message = 1;
+}
+
+message PingResponse {
+    string message = 1;
+}

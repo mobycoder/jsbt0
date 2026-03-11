@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+
+<!--
+  macOS launchd agent for the jsbt0 monthly dependency update.
+
+  INSTALL:
+    cp scripts/com.mobycode.jsbt0.monthly-update.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.mobycode.jsbt0.monthly-update.plist
+
+  UNINSTALL:
+    launchctl unload ~/Library/LaunchAgents/com.mobycode.jsbt0.monthly-update.plist
+    rm ~/Library/LaunchAgents/com.mobycode.jsbt0.monthly-update.plist
+
+  MANUAL TRIGGER (for testing):
+    launchctl start com.mobycode.jsbt0.monthly-update
+
+  CHECK STATUS:
+    launchctl list | grep jsbt0
+
+  NOTES:
+  - Runs at 02:00 on the 1st of every month IF the machine is awake.
+  - launchd will NOT retry a missed run if the machine was asleep.
+    For guaranteed monthly execution use the GitHub Actions workflow instead.
+  - Logs go to ~/claude_code/jsbt0/logs/
+  - ANTHROPIC_API_KEY is loaded from ~/.config/jsbt0/env by the shell script.
+  - Edit the paths below if you move the project directory.
+-->
+
+<plist version="1.0">
+<dict>
+
+  <key>Label</key>
+  <string>com.mobycode.jsbt0.monthly-update</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/osupit/claude_code/jsbt0/scripts/monthly-update.sh</string>
+  </array>
+
+  <!-- Run at 02:00 on the 1st of every month -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Day</key>    <integer>1</integer>
+    <key>Hour</key>   <integer>2</integer>
+    <key>Minute</key> <integer>0</integer>
+  </dict>
+
+  <!-- Keep launchd from restarting on failure -->
+  <key>KeepAlive</key>
+  <false/>
+
+  <!-- Do not run immediately on load -->
+  <key>RunAtLoad</key>
+  <false/>
+
+  <!-- Minimum seconds between runs (24h guard against accidental double-fire) -->
+  <key>ThrottleInterval</key>
+  <integer>86400</integer>
+
+  <!-- Log files (separate from the rolling log written by the script itself) -->
+  <key>StandardOutPath</key>
+  <string>/Users/osupit/claude_code/jsbt0/logs/launchd-stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/osupit/claude_code/jsbt0/logs/launchd-stderr.log</string>
+
+  <!--
+    Minimal environment for the launchd context.
+    The shell script handles JAVA_HOME and ANTHROPIC_API_KEY itself.
+  -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>/Users/osupit</string>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+  </dict>
+
+</dict>
+</plist>

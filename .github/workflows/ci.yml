@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+
+  # ---------------------------------------------------------------
+  # Job 1: JVM build + tests (fast, runs on every push/PR)
+  # Uses Eclipse Temurin 25 — no GraalVM toolchain required here.
+  # ---------------------------------------------------------------
+  test:
+    name: JVM Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 25 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build and test (JVM)
+        run: mvn -B verify
+
+  # ---------------------------------------------------------------
+  # Job 2: GraalVM native compile — matrix across all 3 major OSes.
+  # Runs after JVM tests pass.
+  # Requirements per OS:
+  #   Linux / macOS  — GraalVM 25 (setup-graalvm handles this)
+  #   Windows        — GraalVM 25 + Visual Studio Build Tools (MSVC)
+  # ---------------------------------------------------------------
+  native:
+    name: Native (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Windows: set up MSVC environment (required by native-image on Windows)
+      - name: Set up MSVC (Windows only)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Set up GraalVM 25
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          cache: 'maven'
+          # Emit a build report summary in the Actions UI
+          native-image-job-reports: 'true'
+
+      - name: Compile native executable
+        run: mvn -B -Pnative native:compile -DskipTests
+
+      # Upload the native binary as a workflow artifact
+      - name: Upload native binary (Linux / macOS)
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jsbt0-native-${{ matrix.os }}
+          path: target/jsbt0
+          if-no-files-found: error
+
+      - name: Upload native binary (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jsbt0-native-${{ matrix.os }}
+          path: target/jsbt0.exe
+          if-no-files-found: error
